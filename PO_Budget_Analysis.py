@@ -14,6 +14,7 @@ springAheadFile = ""
 deltekFile = ""
 employeeFile = ""
 outputFile = ""
+nSpringAheadLastWeekNum = 1
 firstProjectedWeek = 1
 doProjection = 0
 
@@ -209,7 +210,7 @@ def createHistoricalData():
 
   #SpringAhead historicalData
   springAheadData = readSpringAheadFile()
-  springAheadLastWeek = 1
+  global nSpringAheadLastWeekNum
   for name, stats in springAheadData.items():
     outRow = {}
     outRow['Name'] = name
@@ -221,18 +222,17 @@ def createHistoricalData():
     for w in range(1,54):
       if w in stats:
         outRow[w] = float(stats[w])
-        if w > springAheadLastWeek:
-          springAheadLastWeek = w
+        if w > nSpringAheadLastWeekNum:
+          nSpringAheadLastWeekNum = w
       else:
         outRow[w] = float(0)
     outputData[name] = outRow
-  print("SpringAhead Last Week " + str(springAheadLastWeek) + " [" + date.fromisocalendar(2020,springAheadLastWeek,7).strftime("%m/%d/%y") + "]")
-  springAheadLastWeek = springAheadLastWeek + 1
+  print("SpringAhead Last Week " + str(nSpringAheadLastWeekNum) + " [" + date.fromisocalendar(2020,nSpringAheadLastWeekNum,7).strftime("%m/%d/%y") + "]")
 
   #Deltek historicalData 
   deltekData = readDeltekExcelFile()
 #  deltekData = readDeltekFile()
-  deltekLastWeek = springAheadLastWeek
+  deltekLastWeek = nSpringAheadLastWeekNum + 1
   for name, stats in deltekData.items():
     outRow = {}
     if name in outputData:
@@ -248,7 +248,7 @@ def createHistoricalData():
       for w in range(1, 54):
         outRow[w] = float(0)
       outputData[name] = outRow
-    for w in range(springAheadLastWeek,54):
+    for w in range(nSpringAheadLastWeekNum+1,54):
       if w in stats:
         outRow[w] = float(stats[w])
         if w > deltekLastWeek:
@@ -399,16 +399,26 @@ def setExcelFormulas(ws, rowCnt, colCnt):
   sHourTotRowNum = str( nHourTotRowNum)
   nDollarTotRowNum = rowCnt
   sDollarTotRowNum = str(nDollarTotRowNum)
-  sLastRowNum = str(rowCnt)
-
+  nLastBilledColumn = firstProjectedWeek + nWeek1ColNum - 2
+  sLastBilledColumn = week1Col
   rateCol = springAheadRateCol
+
   # Total Hours and dollars for each person for the year
-  for nRowNum in range(nFirstNameRowNum, nLastNameRowNum+1):
-    sRowNum = str(nRowNum)
+  for cells in ws.iter_rows(nFirstNameRowNum,nLastNameRowNum,nWeek1ColNum,nWeek53ColNum):
+    sRowNum = str(cells[0].row)
+    # Sum Total hours
     formula = '=SUM(' + week1Col + sRowNum  + ':' + week53Col + sRowNum + ')'
     ws[hourCol + sRowNum].value = formula
-    formula = '=' + rateCol + sRowNum  + ' * ' + hourCol + sRowNum
-    ws[dollarCol + sRowNum].value = formula
+    # Calculate total dollars from rate and hours per week
+    sSpringAheadRateCell = springAheadRateCol + sRowNum
+    sDeltekRateCell = deltekRateCol + sRowNum
+    formula = '=SUM('
+    for cell in cells:
+      if cell.column >= (nSpringAheadLastWeekNum + nWeek1ColNum):
+        formula += sDeltekRateCell + '*' + cell.column_letter + sRowNum + ','
+      else:
+        formula += sSpringAheadRateCell + '*' + cell.column_letter + sRowNum + ','
+    ws[dollarCol + sRowNum].value = formula[0:len(formula)-1] + ')'
 
   # Total Hours and Dollars for each week for all people combined
   for cells in ws.iter_cols(nWeek1ColNum, nWeek53ColNum, nFirstNameRowNum, nLastNameRowNum):
@@ -431,15 +441,36 @@ def setExcelFormulas(ws, rowCnt, colCnt):
     for cell in cells:
       numerator += 'IF(' + cell.coordinate + '>0,' + cell.coordinate + '/$' + cell.column_letter + '$' + sAvailHoursRow + ',0),'
       denominator += 'IF(' + cell.coordinate + '>0,1,0),'
+      sLastBilledColumn = cell.column_letter
     numerator = numerator[0:len(numerator)-1] + ')'
     denominator = denominator[0:len(denominator)-1] + ')'
     ws[runRateCol + str(cells[0].row)] = '=' + numerator + '/' + denominator
 
   # Total hours and dollars for the year all people combined
+  nRow = nDollarTotRowNum + 1
+  sBudgetRow = str(nRow)
+  ws[nameCol + sBudgetRow] = 'Budget'
+  ws[dollarCol + sBudgetRow] = 8958790
+  nRow += 1
+  sProjYearTotRow = str(nRow)
+  ws[nameCol + sProjYearTotRow] = 'Projected Year Totals'
   formula = '=SUM(' + hourCol + sFirstNameRowNum  + ':' + hourCol + sLastNameRowNum + ')'
-  ws[hourCol + sHourTotRowNum] = formula
+  ws[hourCol + sProjYearTotRow] = formula
   formula = '=SUM(' + dollarCol + sFirstNameRowNum  + ':' + dollarCol + sLastNameRowNum + ')'
-  ws[dollarCol + sDollarTotRowNum] = formula
+  ws[dollarCol + sProjYearTotRow] = formula
+  nRow += 1
+  sYearToDateTotRow = str(nRow)
+  formula = '=SUM(' + week1Col + sDollarTotRowNum  + ':' + sLastBilledColumn + sDollarTotRowNum + ')'
+  ws[nameCol + sYearToDateTotRow] = 'Year To Date '
+  ws[dollarCol + sYearToDateTotRow] = formula
+  nRow += 1
+  sETC_Row = str(nRow)
+  ws[nameCol + sETC_Row] = 'Estimate To Complete (ETC)'
+  ws[dollarCol + sETC_Row] = '=' + dollarCol + sBudgetRow + '-' + dollarCol + sYearToDateTotRow
+  nRow += 1
+  sEAC_Row = str(nRow)
+  ws[nameCol + sEAC_Row] = 'Estimate At Complete (EAC)'
+  ws[dollarCol + sEAC_Row] = '=' + dollarCol + sBudgetRow + '-' + dollarCol + sProjYearTotRow
       
   # Project Future hours
   empData = readEmployeeFile()
