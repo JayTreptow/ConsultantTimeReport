@@ -86,7 +86,7 @@ def readSpringAheadFile():
           inData[usr][weekNum] = dayHours
       else:
         stats = {}
-        stats['Rate'] = float(row['Bill Rate'].split("$")[1])
+        stats['SpringAhead Rate'] = float(row['Bill Rate'].split("$")[1])
         stats['Avg Run'] = float(40)
         stats["Hours"] = ""
         stats["Dollars"] = ""
@@ -144,7 +144,7 @@ def readDeltekExcelFile():
       inData[nameVal]['Deltek Rate'] = fRateVal
     else:
       stats = {}
-      stats['Rate'] = fRateVal
+      stats['SpringAhead Rate'] = fRateVal
       stats['Deltek Rate'] = fRateVal
       stats['Avg Run'] = float(40)
       stats["Hours"] = ""
@@ -175,7 +175,7 @@ def readDeltekFile():
           inData[usr][weekNum] = weekHours
       else:
         stats = {}
-        stats['Rate'] = float(stats['Bill Rate'].split("$")[1])
+        stats['SpringAhead Rate'] = float(stats['Bill Rate'].split("$")[1])
         stats['Avg Run'] = float(40)
         stats["Hours"] = ""
         stats["Dollars"] = ""
@@ -203,7 +203,7 @@ def createHistoricalData():
   calendarData = readCalendarFile()
   calendarRow = {}
   calendarRow["Name"] = "Available Hours"
-  calendarRow["Rate"] = calendarRow["Deltek Rate"] = calendarRow["Avg Run"] = calendarRow["Hours"] = calendarRow["Dollars"] = ""
+  calendarRow["SpringAhead Rate"] = calendarRow["Deltek Rate"] = calendarRow["Avg Run"] = calendarRow["Hours"] = calendarRow["Dollars"] = ""
   for w in range(1,54):
     calendarRow[w] = calendarData[w]
   outputData[calendarRow['Name']] = calendarRow
@@ -214,7 +214,7 @@ def createHistoricalData():
   for name, stats in springAheadData.items():
     outRow = {}
     outRow['Name'] = name
-    outRow['Rate'] = stats['Rate']
+    outRow['SpringAhead Rate'] = stats['SpringAhead Rate']
     outRow['Deltek Rate'] = ""
     outRow['Avg Run'] = stats['Avg Run']
     outRow["Hours"] = ""
@@ -240,7 +240,7 @@ def createHistoricalData():
       outRow['Deltek Rate'] = stats['Deltek Rate']
     else:
       outRow['Name'] = name
-      outRow['Rate'] = stats['Rate']
+      outRow['SpringAhead Rate'] = stats['SpringAhead Rate']
       outRow['Deltek Rate'] = stats['Deltek Rate']
       outRow['Avg Run'] = stats['Avg Run']
       outRow["Hours"] = ""
@@ -262,122 +262,12 @@ def createHistoricalData():
 
   return(outputData)
 
-def calculateTotals(outputData):
-
-    hourRow = {}
-    hourRow['Name'] = 'Weekly Hour Total'
-    hourRow['Hours'] = float(0)
-    hourRow['Dollars'] = ''
-
-    dollarRow = {}
-    dollarRow['Name'] = 'Weekly Dollar Total'
-
-    dollarRow['Rate'] = hourRow['Rate'] = ''
-    dollarRow['Deltek Rate'] = hourRow['Deltek Rate'] = ''
-    dollarRow['Avg Run'] = hourRow['Avg Run'] = ''
-    dollarRow['Hours'] = ''
-    dollarRow['Dollars'] = float(0)
-
-    for w in range(1, 54):
-      hourRow[w] = float(0)
-      dollarRow[w] = float(0)
-
-    for name, stats in outputData.items():
-      if 'Available Hours' == name:
-        continue
-
-      stats['Hours'] = float(0)
-      stats['Dollars'] = float(0)
-      try:
-        rate = float(stats['Rate'])
-      except:
-        rate = float(stats['Deltek Rate'])
-
-      for w in range(1,54):
-        if w in stats:
-          stats['Hours'] = float(stats['Hours']) + float(stats[w])
-          hourRow['Hours'] = float(hourRow['Hours']) + float(stats[w])
-          hourRow[w] = float(hourRow[w]) + float(stats[w])
-
-          stats['Dollars'] = float(stats['Dollars']) + (rate * float(stats[w]))
-          dollarRow['Dollars'] = float(dollarRow['Dollars']) + (rate * float(stats[w]))
-          dollarRow[w] = float(dollarRow[w]) + (rate * float(stats[w]))
-        else:
-          hourRow[w] = float(0)
-          dollarRow[w] = float(0)
-
-    outputData[hourRow['Name']] = hourRow
-    outputData[dollarRow['Name']] = dollarRow
-  
 def  radhaFix(outputData):
   outputData['Sahoo, Radha'][32] = float(43)
   outputData['Sahoo, Radha'][33] = float(43)
   outputData['Sahoo, Radha'][34] = float(43)
   outputData['Sahoo, Radha'][35] = float(43)
   outputData['Sahoo, Radha'][36] = float(40)
-
-def calculateRunRate(outputData):
-
-    fRatioSum = float(0)
-    ratioCnt = 0
-
-    for name, stats in outputData.items():
-      if 'Available Hours' == name:
-        availHrs = stats
-        continue
-      elif 'Weekly Hour Total' == name:
-        stats['Avg Run'] = fRatioSum / float(ratioCnt)
-        continue
-      elif 'Weekly Dollar Total' == name:
-        continue
-      
-      fNameRatioSum = float(0)
-      nameRatioCnt = 0
-
-      for w in range(1,54):
-        fweekBilled = float(stats[w])
-        weekAvail = availHrs[w]
-
-        if fweekBilled > float(0):
-          fNameRatioSum = fNameRatioSum + (fweekBilled / float(weekAvail))
-          nameRatioCnt = nameRatioCnt + 1
-
-      runRate = float(1)
-      if nameRatioCnt > 0:
-        runRate = fNameRatioSum / nameRatioCnt 
-      stats['Avg Run'] = runRate
-
-      fRatioSum = fRatioSum + runRate
-      ratioCnt = ratioCnt + 1
-
-def projectFuture(outputData):
-
-    empData = readEmployeeFile()
-
-    for name, stats in outputData.items():
-      rowCheck = name.split(' ')[0]
-      if rowCheck == 'Weekly':
-        continue
-      if 'Available Hours' == name:
-        availHrs = stats
-        continue
-      
-      fRunRate = float(stats['Avg Run'])
-
-      for w in range(firstProjectedWeek,54):
-        if not empData:
-          stats[w] = float(availHrs[w]) * fRunRate
-        else:
-          columnName = "Week " + str(w) + "\n[" + date.fromisocalendar(2020,w,7).strftime("%m/%d/%y") + "]"
-          fProjHrs = float(empData[name][columnName])
-          if fProjHrs <= float(0):
-            stats[w] = float(0)
-          else:
-            fNormProjHrs = float(fProjHrs - (float(40) - float(availHrs[w])))
-            if fNormProjHrs > float(0):
-              stats[w] = fNormProjHrs * fRunRate
-            else:
-              stats[w] = float(0)
 
 def setExcelFormulas(ws, rowCnt, colCnt):
   nameCol = 'A'
@@ -391,13 +281,13 @@ def setExcelFormulas(ws, rowCnt, colCnt):
   sAvailHoursRow = '2'
   nFirstNameRowNum = 3
   sFirstNameRowNum = str(nFirstNameRowNum)
-  nLastNameRowNum = rowCnt - 2
+  nLastNameRowNum = rowCnt
   sLastNameRowNum = str(nLastNameRowNum)
   nWeek1ColNum = 7
   nWeek53ColNum = colCnt
-  nHourTotRowNum = rowCnt - 1
+  nHourTotRowNum = rowCnt + 1
   sHourTotRowNum = str( nHourTotRowNum)
-  nDollarTotRowNum = rowCnt
+  nDollarTotRowNum = rowCnt + 2
   sDollarTotRowNum = str(nDollarTotRowNum)
   nLastBilledColumn = firstProjectedWeek + nWeek1ColNum - 2
   sLastBilledColumn = week1Col
@@ -421,10 +311,13 @@ def setExcelFormulas(ws, rowCnt, colCnt):
     ws[dollarCol + sRowNum].value = formula[0:len(formula)-1] + ')'
 
   # Total Hours and Dollars for each week for all people combined
+  ws[nameCol + sHourTotRowNum] = 'Hours Total/Week'
+  ws[nameCol + sDollarTotRowNum] = 'Dollars Total/Week'
   for cells in ws.iter_cols(nWeek1ColNum, nWeek53ColNum, nFirstNameRowNum, nLastNameRowNum):
     hoursFormula = '=SUM(' + cells[0].coordinate  + ':' + cells[len(cells)-1].coordinate + ')'
     col = cells[0].column_letter
     ws[col + sHourTotRowNum] = hoursFormula
+    ws[col + sHourTotRowNum].number_format = '#,##0.00'
 
     dollarTotalFormula = '=SUM('
     for cell in cells:
@@ -432,6 +325,7 @@ def setExcelFormulas(ws, rowCnt, colCnt):
       dollarTotalFormula += dollarFormula
     dollarTotalFormula = dollarTotalFormula[0:len(dollarTotalFormula)-1] + ')'
     ws[col + sDollarTotRowNum] = dollarTotalFormula
+    ws[col + sDollarTotRowNum].number_format = '"$"#,##0.00'
 
   # Run Rate for each person for billed weeks  
   nLastBilledColumn = firstProjectedWeek + nWeek1ColNum - 2
@@ -451,44 +345,60 @@ def setExcelFormulas(ws, rowCnt, colCnt):
   sBudgetRow = str(nRow)
   ws[nameCol + sBudgetRow] = 'Budget'
   ws[dollarCol + sBudgetRow] = 8958790
+  ws[dollarCol + sBudgetRow].number_format = '"$"#,##0.00'
   nRow += 1
   sProjYearTotRow = str(nRow)
   ws[nameCol + sProjYearTotRow] = 'Projected Year Totals'
+  formula = '=AVERAGE(' + springAheadRateCol + sFirstNameRowNum  + ':' + springAheadRateCol + sLastNameRowNum + ')'
+  ws[springAheadRateCol + sProjYearTotRow] = formula
+  ws[springAheadRateCol + sProjYearTotRow].number_format = '"$"#,##0.00'
+  formula = '=AVERAGE(' + deltekRateCol + sFirstNameRowNum  + ':' + deltekRateCol + sLastNameRowNum + ')'
+  ws[deltekRateCol + sProjYearTotRow] = formula
+  ws[deltekRateCol + sProjYearTotRow].number_format = '"$"#,##0.00'
+  formula = '=AVERAGE(' + runRateCol + sFirstNameRowNum  + ':' + runRateCol + sLastNameRowNum + ')'
+  ws[runRateCol + sProjYearTotRow] = formula
+  ws[runRateCol + sProjYearTotRow].number_format = '#,##0.00'
   formula = '=SUM(' + hourCol + sFirstNameRowNum  + ':' + hourCol + sLastNameRowNum + ')'
   ws[hourCol + sProjYearTotRow] = formula
+  ws[hourCol + sProjYearTotRow].number_format = '#,##0.00'
   formula = '=SUM(' + dollarCol + sFirstNameRowNum  + ':' + dollarCol + sLastNameRowNum + ')'
   ws[dollarCol + sProjYearTotRow] = formula
+  ws[dollarCol + sProjYearTotRow].number_format = '"$"#,##0.00'
   nRow += 1
   sYearToDateTotRow = str(nRow)
   formula = '=SUM(' + week1Col + sDollarTotRowNum  + ':' + sLastBilledColumn + sDollarTotRowNum + ')'
   ws[nameCol + sYearToDateTotRow] = 'Year To Date '
   ws[dollarCol + sYearToDateTotRow] = formula
+  ws[dollarCol + sYearToDateTotRow].number_format = '"$"#,##0.00'
   nRow += 1
   sETC_Row = str(nRow)
   ws[nameCol + sETC_Row] = 'Estimate To Complete (ETC)'
   ws[dollarCol + sETC_Row] = '=' + dollarCol + sBudgetRow + '-' + dollarCol + sYearToDateTotRow
+  ws[dollarCol + sETC_Row].number_format = '"$"#,##0.00'
   nRow += 1
   sEAC_Row = str(nRow)
   ws[nameCol + sEAC_Row] = 'Estimate At Complete (EAC)'
   ws[dollarCol + sEAC_Row] = '=' + dollarCol + sBudgetRow + '-' + dollarCol + sProjYearTotRow
+  ws[dollarCol + sEAC_Row].number_format = '"$"#,##0.00'
       
-  # Project Future hours
-  empData = readEmployeeFile()
-  for cells in ws.iter_rows(nFirstNameRowNum, nLastNameRowNum, nLastBilledColumn+1, nWeek1ColNum + 52):
-    nRow = cells[0].row
-    sRow = str(nRow)
-    for cell in cells:
-      availHrsCell = str(cell.column_letter + '$' + sAvailHoursRow)
-      runRateCell = str(runRateCol + sRow)
-      name = ws[nameCol + sRow].value
-      w = cell.column - nWeek1ColNum + 1
-      columnName = "Week " + str(w) + "\n[" + date.fromisocalendar(2020,w,7).strftime("%m/%d/%y") + "]"
-      sProjHrs = '40'
-      if empData:
-        sProjHrs = str(empData[name][columnName])
-      normalizedHrs = '(' + sProjHrs + ' - (40 - $' + availHrsCell + '))'
-      formula = '=IF(' + normalizedHrs + ' < 0, 0,' + normalizedHrs + ' * ' + runRateCell + ')'
-      ws[cell.coordinate] = formula
+  if doProjection == 1:
+    # Project Future hours
+    empData = readEmployeeFile()
+    for cells in ws.iter_rows(nFirstNameRowNum, nLastNameRowNum, nLastBilledColumn+1, nWeek1ColNum + 52):
+      nRow = cells[0].row
+      sRow = str(nRow)
+      for cell in cells:
+        availHrsCell = str(cell.column_letter + '$' + sAvailHoursRow)
+        runRateCell = str(runRateCol + sRow)
+        name = ws[nameCol + sRow].value
+        w = cell.column - nWeek1ColNum + 1
+        columnName = "Week " + str(w) + "\n[" + date.fromisocalendar(2020,w,7).strftime("%m/%d/%y") + "]"
+        sProjHrs = '40'
+        if empData:
+          sProjHrs = str(empData[name][columnName])
+        normalizedHrs = '(' + sProjHrs + ' - (40 - $' + availHrsCell + '))'
+        formula = '=IF(' + normalizedHrs + ' < 0, 0,' + normalizedHrs + ' * ' + runRateCell + ')'
+        ws[cell.coordinate] = formula
 
 def createOutputExcel(outputData):
 
@@ -496,9 +406,10 @@ def createOutputExcel(outputData):
   ws = wb.active
   ws.title = 'BudgetProjection'
 
-  columnNames = ["Name","Rate","Deltek Rate","Avg Run","Hours","Dollars"]
+  columnNames = ["Name","SA Rate","Deltek Rate","Avg Run","Hours","Dollars"]
   for w in range(1,54):
     columnNames.append("Week " + str(w) + " \n[" + date.fromisocalendar(2020,w,7).strftime("%m/%d/%y") + "]") 
+  ws.freeze_panes = 'G3'
 
   headerCnt = len(columnNames)
   for cells in ws.iter_rows(1,1,1,headerCnt):
@@ -511,10 +422,10 @@ def createOutputExcel(outputData):
   for name, stats in outputData.items():
     for cells in ws.iter_rows(rowNum,rowNum,1,headerCnt):
       cells[0].value = name
-      ws.column_dimensions[cells[0].column_letter].width = 20
-      cells[1].value = stats['Rate']
+      ws.column_dimensions[cells[0].column_letter].width = 25
+      cells[1].value = stats['SpringAhead Rate']
       cells[1].number_format = '"$"#'
-      ws.column_dimensions[cells[1].column_letter].width = 5
+      ws.column_dimensions[cells[1].column_letter].width = 8
       cells[2].value = stats['Deltek Rate']
       cells[2].number_format = '"$"#'
       ws.column_dimensions[cells[2].column_letter].width = 8
@@ -542,27 +453,6 @@ def createOutputExcel(outputData):
 
   wb.save(outputFile)
 
-def createOutputCSV(outputData):
-
-  columnNames = ["Name","Rate","Avg Run","Hours","Dollars"]
-  for w in range(1,54):
-    columnNames.append("Week " + str(w) + "\n[" + date.fromisocalendar(2020,w,7).strftime("%m/%d/%y") + "]") 
-
-  with open(outputFile, 'w', newline='') as fileOut:
-    csvDictWriter = csv.DictWriter(fileOut, fieldnames=columnNames)
-    csvDictWriter.writeheader()
-
-    for name, stats in outputData.items():
-      outRow = {}
-      outRow['Name'] = name
-      outRow['Rate'] = stats['Rate']
-      outRow['Avg Run'] = stats['Avg Run']
-      outRow["Hours"] = stats['Hours']
-      outRow["Dollars"] = stats['Dollars']
-      for w in range(1,54):
-        outRow["Week " + str(w) + "\n[" + date.fromisocalendar(2020,w,7).strftime("%m/%d/%y") + "]"] = float(stats[w])
-      csvDictWriter.writerow(outRow)
-
 if __name__ == '__main__':
   rv = getCmdlineArgs(sys.argv[1:])
   if rv == 1:
@@ -577,10 +467,5 @@ if __name__ == '__main__':
 
   outputData = createHistoricalData()
   radhaFix(outputData)
-  calculateRunRate(outputData)
-  if doProjection == 1:
-    projectFuture(outputData)
-  calculateTotals(outputData)
-  #createOutputCSV(outputData)
   createOutputExcel(outputData)
 
