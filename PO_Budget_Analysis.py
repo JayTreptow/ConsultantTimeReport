@@ -155,35 +155,6 @@ def readDeltekExcelFile():
 
   return(inData)
 
-def readDeltekFile():
-  inData = {}  
-  if len(deltekFile) <= 0:
-    return(inData)
-  with open(deltekFile, newline='') as fileIn:
-    inDict = csv.DictReader(fileIn, delimiter=',', quotechar='"')
-    for row in inDict:
-      usr = row['Name']
-      if len(usr) <= 0 or 'Total' in usr or 'TOTAL' in usr or 'Belcan' in usr:
-        continue
-      date = datetime.strptime(row['G/L Week Ending'],'%m/%d/%Y')
-      weekNum = date.isocalendar()[1]
-      weekHours = float(row['Hours'])
-      if usr in inData:
-        if weekNum in inData[usr]:
-          inData[usr][weekNum] = float(inData[usr][weekNum]) + weekHours
-        else:
-          inData[usr][weekNum] = weekHours
-      else:
-        stats = {}
-        stats['SpringAhead Rate'] = float(stats['Bill Rate'].split("$")[1])
-        stats['Avg Run'] = float(40)
-        stats["Hours"] = ""
-        stats["Dollars"] = ""
-        stats[weekNum] = weekHours
-        inData[usr] = stats
-
-  return(inData)
-
 def readEmployeeFile():
   inData = {}  
   if len(employeeFile) <= 0:
@@ -193,6 +164,36 @@ def readEmployeeFile():
     for row in inDict:
       usr = row['Name']
       inData[usr] = row
+
+  return(inData)
+
+def readEmployeeExcelFile():
+  inData = {}  
+  if len(employeeFile) <= 0:
+    return(inData)
+  excelIn = load_workbook(employeeFile)
+  ws = excelIn.worksheets[0]
+
+  nNameCol = 1
+  nFirstWeekCol = 2
+  nLastWeekCol = 54
+  nRow = 1
+  while ws.cell(nRow,nNameCol).value: 
+    if type(ws.cell(nRow,nNameCol).value) is str:
+      nameColVal = ws.cell(nRow,nNameCol).value
+      if "Name" in nameColVal or "Available" in nameColVal or "Hours" in nameColVal:
+        nRow = nRow + 1
+        continue
+      valSplit = ws.cell(nRow,nNameCol).value.split(', ')
+      nameSplit = valSplit[1].split(' ')
+      name = valSplit[0] + ', ' + nameSplit[0]
+      projectedHours = {}
+      for cells in ws.iter_cols(nFirstWeekCol, nLastWeekCol, nRow, nRow):
+        for cell in cells:
+          columnName = ws[cell.column_letter + str(1)].value
+          projectedHours[columnName] = cell.value
+      inData[name] = projectedHours
+    nRow = nRow + 1
 
   return(inData)
 
@@ -231,7 +232,6 @@ def createHistoricalData():
 
   #Deltek historicalData 
   deltekData = readDeltekExcelFile()
-#  deltekData = readDeltekFile()
   deltekLastWeek = nSpringAheadLastWeekNum + 1
   for name, stats in deltekData.items():
     outRow = {}
@@ -256,6 +256,23 @@ def createHistoricalData():
       else:
         outRow[w] = float(0)
   print("Deltek Last Week " + str(deltekLastWeek) + " [" + date.fromisocalendar(2020,deltekLastWeek,7).strftime("%m/%d/%y") + "]")
+
+  if doProjection == 1:
+    # Add any names from employee file that are not in SpringAhead or Deltek files
+    empData = readEmployeeExcelFile()
+    if empData:
+      for name in empData:
+        if name not in outputData:
+          outRow = {}
+          outRow['Name'] = name
+          outRow['SpringAhead Rate'] = float(216)
+          outRow['Deltek Rate'] = float(216)
+          outRow['Avg Run'] = float(40)
+          outRow["Hours"] = ""
+          outRow["Dollars"] = ""
+          for w in range(1, 54):
+            outRow[w] = float(0)
+          outputData[name] = outRow
 
   global firstProjectedWeek
   firstProjectedWeek = deltekLastWeek + 1
@@ -332,13 +349,18 @@ def setExcelFormulas(ws, rowCnt, colCnt):
   for cells in ws.iter_rows(nFirstNameRowNum,nLastNameRowNum,nWeek1ColNum,nLastBilledColumn):
     numerator = 'SUM('
     denominator = 'SUM('
+    hrsTotal = float(0)
     for cell in cells:
       numerator += 'IF(' + cell.coordinate + '>0,' + cell.coordinate + '/$' + cell.column_letter + '$' + sAvailHoursRow + ',0),'
       denominator += 'IF(' + cell.coordinate + '>0,1,0),'
       sLastBilledColumn = cell.column_letter
+      hrsTotal += (cell.value)
     numerator = numerator[0:len(numerator)-1] + ')'
     denominator = denominator[0:len(denominator)-1] + ')'
-    ws[runRateCol + str(cells[0].row)] = '=' + numerator + '/' + denominator
+    if hrsTotal > 0:
+      ws[runRateCol + str(cells[0].row)] = '=' + numerator + '/' + denominator
+    else:
+      ws[runRateCol + str(cells[0].row)] = float(1.0)
 
   # Total hours and dollars for the year all people combined
   nRow = nDollarTotRowNum + 1
@@ -383,21 +405,21 @@ def setExcelFormulas(ws, rowCnt, colCnt):
       
   if doProjection == 1:
     # Project Future hours
-    empData = readEmployeeFile()
+    empData = readEmployeeExcelFile()
     for cells in ws.iter_rows(nFirstNameRowNum, nLastNameRowNum, nLastBilledColumn+1, nWeek1ColNum + 52):
       nRow = cells[0].row
       sRow = str(nRow)
+      name = ws[nameCol + sRow].value
       for cell in cells:
         availHrsCell = str(cell.column_letter + '$' + sAvailHoursRow)
         runRateCell = str(runRateCol + sRow)
-        name = ws[nameCol + sRow].value
         w = cell.column - nWeek1ColNum + 1
         columnName = "Week " + str(w) + "\n[" + date.fromisocalendar(2020,w,7).strftime("%m/%d/%y") + "]"
         sProjHrs = '40'
         if empData:
           sProjHrs = str(empData[name][columnName])
         normalizedHrs = '(' + sProjHrs + ' - (40 - $' + availHrsCell + '))'
-        formula = '=IF(' + normalizedHrs + ' < 0, 0,' + normalizedHrs + ' * ' + runRateCell + ')'
+        formula = '=IF(' + normalizedHrs + ' <= 0, 0,' + normalizedHrs + ' * ' + runRateCell + ')'
         ws[cell.coordinate] = formula
 
 def createOutputExcel(outputData):
@@ -440,7 +462,7 @@ def createOutputExcel(outputData):
       ws.column_dimensions[cells[5].column_letter].width = 14 
       for w in range(1,54):
         cells[w+5].value = float(stats[w])
-        if rowCnt == rowNum:
+        if rowNum > rowCnt:
           cells[w+5].number_format = '"$"#,##0.00'
         else:
           cells[w+5].number_format = '#,##0.00'
