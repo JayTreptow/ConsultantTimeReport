@@ -251,7 +251,7 @@ def createHistoricalData():
     for w in range(nSpringAheadLastWeekNum+1,54):
       if w in stats:
         outRow[w] = float(stats[w])
-        if w > deltekLastWeek:
+        if w > deltekLastWeek and outRow[w] > float(0):
           deltekLastWeek = w
       else:
         outRow[w] = float(0)
