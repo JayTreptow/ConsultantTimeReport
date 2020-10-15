@@ -3,20 +3,24 @@
 import csv
 from datetime import datetime, date
 import sys, getopt
+import re
 from openpyxl import load_workbook
+from openpyxl.descriptors.base import Integer
 from openpyxl.styles.alignment import Alignment
 from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.dimensions import ColumnDimension
 
-usage = "PO_Budget_Analysis.py -o <output file>\n\t-h : help \n\t-p : Project Future \n\t-c <calendar file> \n\t-s <SpringAhead file> \n\t-d <Deltek File> \n\t-e <Employee File>"
+usage = "PO_Budget_Analysis.py -o <output file>\n\t-h : help \n\t-p : Project Future \n\t-c <calendar file> \n\t-s <SpringAhead file> \n\t-d <Deltek File> \n\t-e <Employee File> \n\t-b <Budget>"
 calendarFile = ""
 springAheadFile = ""
 deltekFile = ""
 employeeFile = ""
 outputFile = ""
 nSpringAheadLastWeekNum = 1
+nTotalNumWeeks = 53
 firstProjectedWeek = 1
 doProjection = 0
+nBudget = 1
 
 def getCmdlineArgs(argv):
   global calendarFile
@@ -25,15 +29,18 @@ def getCmdlineArgs(argv):
   global employeeFile
   global outputFile
   global doProjection
+  global nBudget
 
   try:
-      opts, args = getopt.getopt(argv,"hpc:d:e:o:s:")
+      opts, args = getopt.getopt(argv,"hpb:c:d:e:o:s:")
   except getopt.GetoptError:
       print(usage)
 
   for opt, arg in opts:
     if opt == '-h':
       return 1
+    elif opt in("-b"):
+      nBudget = int(arg)
     elif opt in("-c"):
       calendarFile = arg 
     elif opt in("-d"):
@@ -55,26 +62,34 @@ def getCmdlineArgs(argv):
 
 def readCalendarFile():
   inData = {}  
+  global nTotalNumWeeks
   if len(calendarFile) <= 0:
-    for w in range(1,54):
+    for w in range(1,nTotalNumWeeks+1):
       inData[w] = float(40)
   else:
     with open(calendarFile, newline='') as fileIn:
       inDict = csv.DictReader(fileIn, delimiter=',', quotechar='"')
       for row in inDict:
         weeks = list(row.items())
-        for w in range(0,53):
+        nColCnt = len(weeks) - 1
+        if nColCnt > nTotalNumWeeks :
+          nTotalNumWeeks = nColCnt
+        for w in range(0,nTotalNumWeeks):
           inData[w+1] = weeks[w][1]
 
   return(inData)
 
 def readSpringAheadFile():
   inData = {}  
+  global nTotalNumWeeks
   if len(springAheadFile) <= 0:
     return(inData)
   with open(springAheadFile, newline='') as fileIn:
     inDict = csv.DictReader(fileIn, delimiter=',', quotechar='"')
     for row in inDict:
+      nColCnt = len(row.items()) - 1
+      if nColCnt > nTotalNumWeeks :
+        nTotalNumWeeks = nColCnt
       usr = row['User']
       date = datetime.strptime(row['Date'],'%m/%d/%Y')
       weekNum = date.isocalendar()[1]
@@ -155,20 +170,10 @@ def readDeltekExcelFile():
 
   return(inData)
 
-def readEmployeeFile():
-  inData = {}  
-  if len(employeeFile) <= 0:
-    return(inData)
-  with open(employeeFile, newline='') as fileIn:
-    inDict = csv.DictReader(fileIn, delimiter=',', quotechar='"')
-    for row in inDict:
-      usr = row['Name']
-      inData[usr] = row
-
-  return(inData)
-
 def readEmployeeExcelFile():
   inData = {}  
+  global nTotalNumWeeks
+
   if len(employeeFile) <= 0:
     return(inData)
   excelIn = load_workbook(employeeFile)
@@ -176,7 +181,9 @@ def readEmployeeExcelFile():
 
   nNameCol = 1
   nFirstWeekCol = 2
-  nLastWeekCol = 54
+  if ws.max_column - 1 > nTotalNumWeeks :
+    nTotalNumWeeks = ws.max_column - 1
+
   nRow = 1
   while ws.cell(nRow,nNameCol).value: 
     if type(ws.cell(nRow,nNameCol).value) is str:
@@ -188,7 +195,7 @@ def readEmployeeExcelFile():
       nameSplit = valSplit[1].split(' ')
       name = valSplit[0] + ', ' + nameSplit[0]
       projectedHours = {}
-      for cells in ws.iter_cols(nFirstWeekCol, nLastWeekCol, nRow, nRow):
+      for cells in ws.iter_cols(nFirstWeekCol, nTotalNumWeeks + 1, nRow, nRow):
         for cell in cells:
           columnName = ws[cell.column_letter + str(1)].value
           projectedHours[columnName] = cell.value
@@ -205,7 +212,7 @@ def createHistoricalData():
   calendarRow = {}
   calendarRow["Name"] = "Available Hours"
   calendarRow["SpringAhead Rate"] = calendarRow["Deltek Rate"] = calendarRow["Avg Run"] = calendarRow["Hours"] = calendarRow["Dollars"] = ""
-  for w in range(1,54):
+  for w in range(1,nTotalNumWeeks+1):
     calendarRow[w] = calendarData[w]
   outputData[calendarRow['Name']] = calendarRow
 
@@ -220,7 +227,7 @@ def createHistoricalData():
     outRow['Avg Run'] = stats['Avg Run']
     outRow["Hours"] = ""
     outRow["Dollars"] = ""
-    for w in range(1,54):
+    for w in range(1,nTotalNumWeeks+1):
       if w in stats:
         outRow[w] = float(stats[w])
         if w > nSpringAheadLastWeekNum:
@@ -245,10 +252,10 @@ def createHistoricalData():
       outRow['Avg Run'] = stats['Avg Run']
       outRow["Hours"] = ""
       outRow["Dollars"] = ""
-      for w in range(1, 54):
+      for w in range(1,nTotalNumWeeks+1):
         outRow[w] = float(0)
       outputData[name] = outRow
-    for w in range(nSpringAheadLastWeekNum+1,54):
+    for w in range(nSpringAheadLastWeekNum+1,nTotalNumWeeks+1):
       if w in stats:
         outRow[w] = float(stats[w])
         if w > deltekLastWeek and outRow[w] > float(0):
@@ -270,7 +277,7 @@ def createHistoricalData():
           outRow['Avg Run'] = float(40)
           outRow["Hours"] = ""
           outRow["Dollars"] = ""
-          for w in range(1, 54):
+          for w in range(1,nTotalNumWeeks+1):
             outRow[w] = float(0)
           outputData[name] = outRow
 
@@ -280,11 +287,12 @@ def createHistoricalData():
   return(outputData)
 
 def  radhaFix(outputData):
-  outputData['Sahoo, Radha'][32] = float(43)
-  outputData['Sahoo, Radha'][33] = float(43)
-  outputData['Sahoo, Radha'][34] = float(43)
-  outputData['Sahoo, Radha'][35] = float(43)
-  outputData['Sahoo, Radha'][36] = float(40)
+  if 'Sahoo, Radha' in outputData :
+    outputData['Sahoo, Radha'][32] = float(43)
+    outputData['Sahoo, Radha'][33] = float(43)
+    outputData['Sahoo, Radha'][34] = float(43)
+    outputData['Sahoo, Radha'][35] = float(43)
+    outputData['Sahoo, Radha'][36] = float(40)
 
 def setExcelFormulas(ws, rowCnt, colCnt):
   nameCol = 'A'
@@ -294,16 +302,15 @@ def setExcelFormulas(ws, rowCnt, colCnt):
   hourCol = 'E'
   dollarCol = 'F'
   week1Col = 'G'
-  week53Col = 'BG'
   sAvailHoursRow = '2'
   nFirstNameRowNum = 3
   sFirstNameRowNum = str(nFirstNameRowNum)
   nLastNameRowNum = rowCnt
   sLastNameRowNum = str(nLastNameRowNum)
   nWeek1ColNum = 7
-  nWeek53ColNum = colCnt
+  nLastWeekColNum = colCnt
   nHourTotRowNum = rowCnt + 1
-  sHourTotRowNum = str( nHourTotRowNum)
+  sHourTotRowNum = str(nHourTotRowNum)
   nDollarTotRowNum = rowCnt + 2
   sDollarTotRowNum = str(nDollarTotRowNum)
   nLastBilledColumn = firstProjectedWeek + nWeek1ColNum - 2
@@ -311,10 +318,11 @@ def setExcelFormulas(ws, rowCnt, colCnt):
   rateCol = springAheadRateCol
 
   # Total Hours and dollars for each person for the year
-  for cells in ws.iter_rows(nFirstNameRowNum,nLastNameRowNum,nWeek1ColNum,nWeek53ColNum):
+  for cells in ws.iter_rows(nFirstNameRowNum,nLastNameRowNum,nWeek1ColNum,nLastWeekColNum):
     sRowNum = str(cells[0].row)
+    lastWeekCol = cells[nLastWeekColNum-nWeek1ColNum].column_letter
     # Sum Total hours
-    formula = '=SUM(' + week1Col + sRowNum  + ':' + week53Col + sRowNum + ')'
+    formula = '=SUM(' + week1Col + sRowNum  + ':' + lastWeekCol + sRowNum + ')'
     ws[hourCol + sRowNum].value = formula
     # Calculate total dollars from rate and hours per week
     sSpringAheadRateCell = springAheadRateCol + sRowNum
@@ -330,7 +338,7 @@ def setExcelFormulas(ws, rowCnt, colCnt):
   # Total Hours and Dollars for each week for all people combined
   ws[nameCol + sHourTotRowNum] = 'Hours Total/Week'
   ws[nameCol + sDollarTotRowNum] = 'Dollars Total/Week'
-  for cells in ws.iter_cols(nWeek1ColNum, nWeek53ColNum, nFirstNameRowNum, nLastNameRowNum):
+  for cells in ws.iter_cols(nWeek1ColNum, nLastWeekColNum, nFirstNameRowNum, nLastNameRowNum):
     hoursFormula = '=SUM(' + cells[0].coordinate  + ':' + cells[len(cells)-1].coordinate + ')'
     col = cells[0].column_letter
     ws[col + sHourTotRowNum] = hoursFormula
@@ -366,7 +374,7 @@ def setExcelFormulas(ws, rowCnt, colCnt):
   nRow = nDollarTotRowNum + 1
   sBudgetRow = str(nRow)
   ws[nameCol + sBudgetRow] = 'Budget'
-  ws[dollarCol + sBudgetRow] = 8958790
+  ws[dollarCol + sBudgetRow] = nBudget
   ws[dollarCol + sBudgetRow].number_format = '"$"#,##0.00'
   nRow += 1
   sProjYearTotRow = str(nRow)
@@ -406,7 +414,7 @@ def setExcelFormulas(ws, rowCnt, colCnt):
   if doProjection == 1:
     # Project Future hours
     empData = readEmployeeExcelFile()
-    for cells in ws.iter_rows(nFirstNameRowNum, nLastNameRowNum, nLastBilledColumn+1, nWeek1ColNum + 52):
+    for cells in ws.iter_rows(nFirstNameRowNum, nLastNameRowNum, nLastBilledColumn+1, nLastWeekColNum):
       nRow = cells[0].row
       sRow = str(nRow)
       name = ws[nameCol + sRow].value
@@ -414,7 +422,10 @@ def setExcelFormulas(ws, rowCnt, colCnt):
         availHrsCell = str(cell.column_letter + '$' + sAvailHoursRow)
         runRateCell = str(runRateCol + sRow)
         w = cell.column - nWeek1ColNum + 1
-        columnName = "Week " + str(w) + "\n[" + date.fromisocalendar(2020,w,7).strftime("%m/%d/%y") + "]"
+        nThYear = int(w / 54)
+        nYear = 2020 + int(nThYear)
+        nWeek = w - (53 * nThYear)
+        columnName = "Week " + str(nWeek) + "\n[" + date.fromisocalendar(nYear,nWeek,7).strftime("%m/%d/%y") + "]"
         sProjHrs = '40'
         if empData:
           sProjHrs = str(empData[name][columnName])
@@ -426,11 +437,13 @@ def createOutputExcel(outputData):
 
   wb = Workbook()
   ws = wb.active
-  ws.title = 'BudgetProjection'
-
+  ws.title = 'Budget Projection'
   columnNames = ["Name","SA Rate","Deltek Rate","Avg Run","Hours","Dollars"]
-  for w in range(1,54):
-    columnNames.append("Week " + str(w) + " \n[" + date.fromisocalendar(2020,w,7).strftime("%m/%d/%y") + "]") 
+  for w in range(1,nTotalNumWeeks+1):
+    nThYear = int(w / 54)
+    nYear = 2020 + int(nThYear)
+    nWeek = w - (53 * nThYear)
+    columnNames.append("Week " + str(nWeek) + " \n[" + date.fromisocalendar(nYear,nWeek,7).strftime("%m/%d/%y") + "]") 
   ws.freeze_panes = 'G3'
 
   headerCnt = len(columnNames)
@@ -460,7 +473,7 @@ def createOutputExcel(outputData):
       cells[5].value = stats['Dollars']
       cells[5].number_format = '"$"#,##0.00'
       ws.column_dimensions[cells[5].column_letter].width = 14 
-      for w in range(1,54):
+      for w in range(1,nTotalNumWeeks+1):
         cells[w+5].value = float(stats[w])
         if rowNum > rowCnt:
           cells[w+5].number_format = '"$"#,##0.00'
